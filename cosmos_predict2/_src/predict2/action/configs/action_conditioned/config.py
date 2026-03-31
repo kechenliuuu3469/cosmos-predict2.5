@@ -31,6 +31,9 @@ from cosmos_predict2._src.predict2.configs.common.defaults.optimizer import regi
 from cosmos_predict2._src.predict2.configs.common.defaults.scheduler import register_scheduler
 from cosmos_predict2._src.predict2.configs.common.defaults.tokenizer import register_tokenizer
 from cosmos_predict2._src.predict2.configs.video2world.defaults.callbacks import register_callbacks
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_droid import register_droid_data
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_lam import register_lam_data
+
 
 
 @attrs.define(slots=False)
@@ -91,7 +94,8 @@ def make_config() -> Config:
     register_ckpt_type()
 
     register_training_and_val_data()
-
+    register_droid_data()
+    register_lam_data()
     register_net()
     register_conditioner()
 

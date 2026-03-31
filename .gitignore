@@ -199,9 +199,13 @@ cython_debug/
 /datasets/
 /output/
 /outputs/
+/slurm_outputs/
 /results/
 /tmp/
 
 !assets/**/*.png
 !assets/**/*.jpg
 !assets/**/*.mp4
+
+run_postrain_lam_vertical.sh
+run_postrain_droid_vertical.sh

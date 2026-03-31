@@ -1,0 +1,6 @@
+name: cosmos_predict25
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+prefix: /n/fs/geniemodel/conda/envs/cosmos_predict25
