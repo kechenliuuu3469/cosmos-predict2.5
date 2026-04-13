@@ -48,14 +48,14 @@ ac_reason_embeddings_rectified_flow_2b_256_320_droid_dreamzero = LazyDict(
             straggler_detection=dict(enabled=False),
             callbacks=dict(
                 every_n_sample_reg=dict(
-                    every_n=500,
+                    every_n=2000,
                     do_x0_prediction=False,
                     guidance=[0],
                     fps=16,
                     save_s3=False,
                 ),
                 every_n_sample_ema=dict(
-                    every_n=500,
+                    every_n=2000,
                     do_x0_prediction=False,
                     guidance=[0],
                     fps=16,

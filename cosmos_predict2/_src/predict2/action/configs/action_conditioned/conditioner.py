@@ -279,6 +279,29 @@ ActionConditionedConditionerConfig: LazyDict = L(ActionConditionedConditioner)(
     ),
 )
 
+# Dual-T5 variant for language-action conditioning (see CLAUDE_oxe_language_updated.md).
+# Two independent TextAttr entries — one for the task prompt (t5_text_embeddings),
+# one for the language action chunk (action_t5_embeddings). Both write to
+# crossattn_emb, which GeneralConditioner concatenates along the sequence
+# dimension (KEY2DIM["crossattn_emb"] = 1). The two streams stay independent
+# token ranges inside a single cross-attention context.
+_LANGUAGE_ACTION_CONFIG = dict(_SHARED_CONFIG)
+_LANGUAGE_ACTION_CONFIG["action_text"] = L(TextAttr)(
+    input_key=["action_t5_embeddings"],
+    dropout_rate=0.2,
+    use_empty_string=False,
+)
+
+ActionConditionedLanguageConditionerConfig: LazyDict = L(ActionConditionedConditioner)(
+    **_LANGUAGE_ACTION_CONFIG,
+    action=L(ReMapkey)(
+        input_key="action",
+        output_key="action",
+        dropout_rate=0.0,
+        dtype=None,
+    ),
+)
+
 
 def register_conditioner():
     cs = ConfigStore.instance()
@@ -301,4 +324,11 @@ def register_conditioner():
         package="model.config.conditioner",
         name="action_conditioned_video_conditioner",
         node=ActionConditionedConditionerConfig,
+    )
+
+    cs.store(
+        group="conditioner",
+        package="model.config.conditioner",
+        name="action_conditioned_language_conditioner",
+        node=ActionConditionedLanguageConditionerConfig,
     )

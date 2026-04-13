@@ -16,10 +16,10 @@ from cosmos_predict2._src.predict2.action.datasets.dataset_droid import Dataset_
 
 
 # DROID dataset path
-base_path = "datasets/droid/"
+base_path = "/scratch/gpfs/AM43/users/kl0820/datasets/oxe_mp4/droid"
 
-train_annotation_path = os.path.join(base_path, "annotation/train")
-val_annotation_path = os.path.join(base_path, "annotation/val")
+train_annotation_path = os.path.join(base_path, "annotation2/train")
+val_annotation_path = os.path.join(base_path, "annotation2/val")
 
 
 # DROID dataset for 13-frame action-sequence video prediction
@@ -36,7 +36,7 @@ droid_13frame_train_dataset = L(Dataset_3D_DROID)(
     val_start_frame_interval=1,
     mode="train",
     stack_views=True,
-    stacking_mode="vertical",       # "vertical" or "dreamzero"
+    stacking_mode="dreamzero",
     wrist_view_id=2,
     left_view_id=0,
     right_view_id=1,
@@ -55,7 +55,7 @@ droid_13frame_val_dataset = L(Dataset_3D_DROID)(
     val_start_frame_interval=1,
     mode="val",
     stack_views=True,
-    stacking_mode="vertical",       # must match train
+    stacking_mode="dreamzero",
     wrist_view_id=2,
     left_view_id=0,
     right_view_id=1,

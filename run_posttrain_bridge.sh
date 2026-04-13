@@ -1,16 +1,18 @@
 #!/bin/bash
-#SBATCH --job-name=cosmos_lam_finetune
+#SBATCH --job-name=cosmos_bridge
 #SBATCH --nodes=1
 #SBATCH --partition=ailab
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=256G
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm_outputs/%x/out_%x_%j.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kl0820@princeton.edu
-mkdir -p slurm_outputs/cosmos_lam_finetune
+#SBATCH --exclude=della-i20g2
+
+mkdir -p slurm_outputs/cosmos_bridge
 
 PROJECT_DIR=/scratch/gpfs/AM43/users/kl0820/projects/cosmos-predict2.5
 cd $PROJECT_DIR
@@ -24,16 +26,15 @@ export IMAGINAIRE_OUTPUT_ROOT=/scratch/gpfs/AM43/users/kl0820/cosmos_output
 export HF_TOKEN=$(python -c "from huggingface_hub import HfFolder; print(HfFolder.get_token())")
 export PYTHONPATH=$(pwd):$PYTHONPATH
 export PYTHONWARNINGS=ignore
-
-# ===== SET THIS TO YOUR STAGE 1 LAM CHECKPOINT =====
-# Find the latest checkpoint from your LAM pre-training:
-#   ls $IMAGINAIRE_OUTPUT_ROOT/cosmos_predict2_action_conditioned/cosmos_predict_v2p5/2b_bridge_droid_lam_action_conditioned/checkpoints/
-export LAM_STAGE1_CKPT_PATH="/scratch/gpfs/AM43/users/kl0820/cosmos_output/cosmos_predict2_action_conditioned/cosmos_predict_v2p5/2b_bridge_droid_lam_action_conditioned/checkpoints/iter_000020000"
+export NCCL_DEBUG=INFO
 
 PYTHONPATH=$(pwd) \
-torchrun --nproc_per_node=4 --master_port=12346 \
+torchrun --nproc_per_node=4 --master_port=12345 \
     -m scripts.train \
     --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py \
-    -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320_lam_finetune \
+    -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320 \
     ~dataloader_train.dataloaders \
-    trainer.max_iter=30000
+    trainer.max_iter=50000 \
+    dataloader_train.batch_size=48 \
+    checkpoint.save_iter=500
+

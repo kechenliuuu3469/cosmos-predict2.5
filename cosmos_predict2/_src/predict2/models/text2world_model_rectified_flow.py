@@ -737,6 +737,21 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             data_batch["t5_text_embeddings"] = text_embeddings
             data_batch["t5_text_mask"] = torch.ones(text_embeddings.shape[0], text_embeddings.shape[1], device="cuda")
 
+            # Optional second T5 stream for language-action conditioning
+            # (see CLAUDE_oxe_language_updated.md). The task prompt and the
+            # per-chunk action text are encoded independently by T5 and then
+            # fed to the conditioner as two parallel TextAttr entries.
+            if "action_caption" in data_batch:
+                action_text_embeddings = self.text_encoder.compute_text_embeddings_online(
+                    data_batch, "action_caption"
+                )
+                data_batch["action_t5_embeddings"] = action_text_embeddings
+                data_batch["action_t5_mask"] = torch.ones(
+                    action_text_embeddings.shape[0],
+                    action_text_embeddings.shape[1],
+                    device="cuda",
+                )
+
         # Get the input data to noise and denoise~(image, video) and the corresponding conditioner.
         _, x0_B_C_T_H_W, condition = self.get_data_and_condition(data_batch)
 

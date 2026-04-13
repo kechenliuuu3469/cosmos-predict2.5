@@ -150,12 +150,93 @@ class CheckpointDirS3(_CheckpointS3):
 CheckpointS3: TypeAlias = CheckpointFileS3 | CheckpointDirS3
 
 
+def _hf_try_cached(cmd_args: list[str]) -> str | None:
+    """Try to resolve a HuggingFace checkpoint from local cache without network access.
+
+    Returns the local path if found in cache, None otherwise.
+    For file downloads, returns the file path.
+    For directory downloads (with --include), returns the snapshot root directory.
+    """
+    # Parse cmd_args to extract repo_id, revision, filename, and include patterns.
+    repo_id = cmd_args[0] if cmd_args else None
+    if not repo_id:
+        return None
+
+    revision = None
+    filename = None
+    has_include = False
+    include_patterns: list[str] = []
+    i = 1
+    while i < len(cmd_args):
+        if cmd_args[i] == "--revision" and i + 1 < len(cmd_args):
+            revision = cmd_args[i + 1]
+            i += 2
+        elif cmd_args[i] == "--include":
+            has_include = True
+            i += 1
+            # Collect all following non-flag args as include patterns.
+            while i < len(cmd_args) and not cmd_args[i].startswith("--"):
+                include_patterns.append(cmd_args[i])
+                i += 1
+        elif cmd_args[i] in ("--repo-type", "--quiet"):
+            i += 2
+        elif cmd_args[i] == "--exclude":
+            i += 1
+            while i < len(cmd_args) and not cmd_args[i].startswith("--"):
+                i += 1
+        else:
+            # Positional arg after repo_id is a filename.
+            if not cmd_args[i].startswith("--"):
+                filename = cmd_args[i]
+            i += 1
+
+    if not revision:
+        return None
+
+    cache_dir = os.environ.get("HF_HOME", os.environ.get("HF_HUB_CACHE"))
+    if not cache_dir:
+        return None
+
+    snapshot_dir = os.path.join(
+        cache_dir, f"models--{repo_id.replace('/', '--')}", "snapshots", revision
+    )
+
+    if filename:
+        # Single file download.
+        path = os.path.join(snapshot_dir, filename)
+        if os.path.exists(path):
+            return path
+    elif has_include and include_patterns:
+        # Directory download — verify include patterns exist, return snapshot root.
+        # e.g. pattern 'base/pre-trained/308eb96c-.../*' -> check that dir exists.
+        all_found = True
+        for pattern in include_patterns:
+            subdir = pattern.rstrip("/*")
+            path = os.path.join(snapshot_dir, subdir)
+            if not os.path.exists(path):
+                all_found = False
+                break
+        if all_found:
+            return snapshot_dir
+    elif os.path.isdir(snapshot_dir):
+        # No filename or include — just check snapshot dir exists.
+        return snapshot_dir
+
+    return None
+
+
 def _hf_download(cmd_args: list[str]) -> str:
     """Run Hugging Face CLI download command and return the local path.
 
     Uses a newer Hugging Face CLI version to download checkpoint. The dependency
     version is very old and not robust.
     """
+    # Try to resolve from local cache first (avoids network/uvx dependency).
+    cached = _hf_try_cached(cmd_args)
+    if cached:
+        log.info(f"Found cached checkpoint: {cached}")
+        return cached
+
     cmd = [
         "uvx",
         f"hf>={_MINIMUM_HF_CLI_VERSION}",

@@ -1,40 +1,29 @@
 """
 DROID Dataset adapter for Cosmos Predict 2.5 action-conditioned post-training.
 
-Supports two stacking modes (matching LAM training):
+DROID data is formatted in Bridge format:
+  annotation2/{train,val}/episode_XXXXXX.json  — states + metadata
+  videos/{train,val}/episode_XXXXXX/{cam_id}.mp4  — video per camera view
 
-  "vertical" (Ctrl-World style):
-  ┌──────────────┐
-  │   View 0     │  192 × 320
-  ├──────────────┤
-  │   View 1     │  192 × 320
-  ├──────────────┤
-  │   View 2     │  192 × 320
-  └──────────────┘
-  576 × 320 → resize to 256 × 320
+Stacking mode:
 
   "dreamzero" (DreamZero style):
-  ┌──────────────────────────┐
-  │   View 2 (wrist)         │  192 × 640
-  ├─────────────┬────────────┤
-  │  View 0     │   View 1   │  192 × 320 each
-  └─────────────┴────────────┘
-  384 × 640 → resize to 256 × 320
+  +----------------------------+
+  |   View 2 (wrist)           |  H x 2W
+  +--------------+-------------+
+  |  View 0      |   View 1    |  H x W each
+  +--------------+-------------+
+  2H x 2W -> resize to 256 x 320
 
 Place this file at:
   cosmos_predict2/_src/predict2/action/datasets/dataset_droid.py
 """
 
-import json
 import os
-import random
-import traceback
-import warnings
 
 import cv2
 import numpy as np
 import torch
-from decord import VideoReader, cpu
 from torch.utils.data import Dataset
 
 from cosmos_predict2._src.predict2.action.datasets.dataset_local import Dataset_3D
@@ -42,14 +31,19 @@ from cosmos_predict2._src.predict2.action.datasets.dataset_local import Dataset_
 
 class Dataset_3D_DROID(Dataset_3D):
     """
-    DROID dataset adapter with multi-view stacking.
+    DROID dataset adapter with multi-view DreamZero stacking.
+
+    Data is in Bridge format (absolute states). Actions are computed
+    as relative transforms by the parent class.
 
     Key differences from Bridge Dataset_3D:
-    1. state_key = "states" (not "state")
-    2. Gripper from states[:, 6] (not separate key)
-    3. All 3 camera views stacked into one image
-    4. Configurable stacking mode: "vertical" or "dreamzero"
+    1. Per-dataset action and gripper scaling
+    2. All 3 camera views stacked into one image (DreamZero layout)
     """
+
+    # Scale factors from action_scalers.json (bridge_std / droid_std)
+    DROID_ACTION_SCALE = 0.9336
+    DROID_GRIPPER_SCALE = 1.2438
 
     def __init__(
         self,
@@ -73,10 +67,11 @@ class Dataset_3D_DROID(Dataset_3D):
         gripper_rescale_factor=1.0,
         is_rollout=None,
         stack_views=True,
-        stacking_mode="vertical",      # "vertical" or "dreamzero"
+        stacking_mode="dreamzero",
         wrist_view_id=2,
         left_view_id=0,
         right_view_id=1,
+        action_scale=None,
     ):
         if cam_ids is None:
             cam_ids = [0, 1, 2]
@@ -89,8 +84,8 @@ class Dataset_3D_DROID(Dataset_3D):
         self.left_view_id = left_view_id
         self.right_view_id = right_view_id
 
-        assert stacking_mode in ("vertical", "dreamzero"), \
-            f"stacking_mode must be 'vertical' or 'dreamzero', got '{stacking_mode}'"
+        assert stacking_mode == "dreamzero", \
+            f"stacking_mode must be 'dreamzero', got '{stacking_mode}'"
 
         super().__init__(
             train_annotation_path=train_annotation_path,
@@ -110,36 +105,20 @@ class Dataset_3D_DROID(Dataset_3D):
             load_t5_embeddings=load_t5_embeddings,
             load_action=load_action,
             mode=mode,
-            state_key="states",
-            gripper_key="states",
             gripper_rescale_factor=gripper_rescale_factor,
             is_rollout=is_rollout,
         )
 
-    def _get_robot_states(self, label, frame_ids):
-        """
-        Override: DROID has arm + gripper in a single "states" array.
-        states[:, :6] = arm (xyz + euler), states[:, 6] = gripper
-        """
-        all_states = np.array(label["states"])
-        states = all_states[frame_ids]
-        arm_states = states[:, :6]
-        gripper_states = states[:, 6]
-        return arm_states, gripper_states
-
-    def _stack_frames_vertical(self, view0_frames, view1_frames, view2_frames):
-        """
-        Ctrl-World style: stack all 3 views vertically (0, 1, 2).
-        Result: 3H × W per frame
-        """
-        T = len(view0_frames)
-        stacked = np.concatenate([view0_frames, view1_frames, view2_frames], axis=1)  # (T, 3H, W, 3)
-        return stacked
+        # Apply action scale to motion dims of c_act_scaler (set by parent as [20]*6 + [gripper])
+        if action_scale is None:
+            action_scale = self.DROID_ACTION_SCALE
+        self.c_act_scaler[:6] *= action_scale
+        self.c_act_scaler[6] *= self.DROID_GRIPPER_SCALE
 
     def _stack_frames_dreamzero(self, view0_frames, view1_frames, view2_frames):
         """
         DreamZero style: wrist (view 2) on top doubled, left+right on bottom.
-        Result: 2H × 2W per frame
+        Result: 2H x 2W per frame
         """
         T, H, W, C = view0_frames.shape
         stacked_frames = []
@@ -154,7 +133,7 @@ class Dataset_3D_DROID(Dataset_3D):
 
     def _load_and_stack_views(self, label, frame_ids):
         """
-        Load all 3 views and stack them according to stacking_mode.
+        Load all 3 views and stack them in DreamZero layout.
         """
         view0_path = os.path.join(self.video_path, label["videos"][self.left_view_id]["video_path"])
         view1_path = os.path.join(self.video_path, label["videos"][self.right_view_id]["video_path"])
@@ -164,10 +143,7 @@ class Dataset_3D_DROID(Dataset_3D):
         view1_frames = self._load_video(view1_path, frame_ids)
         view2_frames = self._load_video(view2_path, frame_ids)
 
-        if self.stacking_mode == "vertical":
-            return self._stack_frames_vertical(view0_frames, view1_frames, view2_frames)
-        elif self.stacking_mode == "dreamzero":
-            return self._stack_frames_dreamzero(view0_frames, view1_frames, view2_frames)
+        return self._stack_frames_dreamzero(view0_frames, view1_frames, view2_frames)
 
     def _get_obs(self, label, frame_ids, cam_id, pre_encode):
         """
@@ -191,3 +167,10 @@ class Dataset_3D_DROID(Dataset_3D):
             return frames, 0
         else:
             return super()._get_obs(label, frame_ids, cam_id, pre_encode)
+
+    def __getitem__(self, index, cam_id=None, return_video=False):
+        """Override: ensure __key__ is a string for collation compatibility."""
+        data = super().__getitem__(index, cam_id=cam_id, return_video=return_video)
+        if "__key__" in data:
+            data["__key__"] = str(data["__key__"])
+        return data

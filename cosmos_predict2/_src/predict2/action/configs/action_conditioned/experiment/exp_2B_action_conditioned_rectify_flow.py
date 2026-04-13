@@ -347,7 +347,7 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED
             load_from_object_store=dict(
                 enabled=True,
             ),
-            load_path="cosmos_diffusion_v2/official_runs_text2world/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted/checkpoints/iter_000010000/",
+            load_path="s3://bucket/cosmos_diffusion_v2/official_runs_text2world/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted/checkpoints/iter_000010000/model",
             load_training_state=False,
             strict_resume=True,
         ),
@@ -567,23 +567,51 @@ AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B = LazyDict(
         ),
         checkpoint=dict(
             save_iter=2_000,
-            load_path="cosmos_diffusion_v2/official_runs_text2world/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted/checkpoints/iter_000010000/",
+            load_path="s3://bucket/cosmos_diffusion_v2/official_runs_text2world/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted/checkpoints/iter_000010000/model",
             load_training_state=False,
             strict_resume=False,
+            load_from_object_store=dict(
+                enabled=False,
+            ),
+            save_to_object_store=dict(
+                enabled=False,
+            ),
         ),
         trainer=dict(
+            straggler_detection=dict(enabled=False),
             callbacks=dict(
                 every_n_sample_reg=dict(
                     every_n=500,
                     do_x0_prediction=False,
                     guidance=[0],
                     fps=16,
+                    save_s3=False,
                 ),
                 every_n_sample_ema=dict(
                     every_n=500,
                     do_x0_prediction=False,
                     guidance=[0],
                     fps=16,
+                    save_s3=False,
+                ),
+                heart_beat=dict(
+                    save_s3=False,
+                ),
+                iter_speed=dict(
+                    hit_thres=100,
+                    save_s3=False,
+                ),
+                device_monitor=dict(
+                    save_s3=False,
+                ),
+                wandb=dict(
+                    save_s3=False,
+                ),
+                wandb_10x=dict(
+                    save_s3=False,
+                ),
+                dataloader_speed=dict(
+                    save_s3=False,
                 ),
             ),
         ),
