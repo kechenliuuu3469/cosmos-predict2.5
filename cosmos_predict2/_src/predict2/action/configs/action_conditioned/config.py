@@ -34,6 +34,7 @@ from cosmos_predict2._src.predict2.configs.video2world.defaults.callbacks import
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_droid import register_droid_data
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_lam import register_lam_data
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_oxe import register_oxe_data
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_oxe_lam import register_oxe_lam_data
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_oxe_lang import register_oxe_lang_data
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.data_oxe_language import register_oxe_language_data
 
@@ -100,6 +101,7 @@ def make_config() -> Config:
     register_droid_data()
     register_lam_data()
     register_oxe_data()
+    register_oxe_lam_data()
     register_oxe_lang_data()
     register_oxe_language_data()
     register_net()
