@@ -42,8 +42,8 @@ ac_reason_embeddings_rectified_flow_2b_256_320_oxe_lam = LazyDict(
         trainer=dict(
             straggler_detection=dict(enabled=False),
             callbacks=dict(
-                every_n_sample_reg=dict(every_n=500, do_x0_prediction=False, guidance=[0], fps=16, save_s3=False),
-                every_n_sample_ema=dict(every_n=500, do_x0_prediction=False, guidance=[0], fps=16, save_s3=False),
+                every_n_sample_reg=dict(every_n=2000, do_x0_prediction=False, guidance=[0], fps=16, save_s3=False),
+                every_n_sample_ema=dict(every_n=2000, do_x0_prediction=False, guidance=[0], fps=16, save_s3=False),
                 heart_beat=dict(save_s3=False),
                 iter_speed=dict(hit_thres=100, save_s3=False),
                 device_monitor=dict(save_s3=False),

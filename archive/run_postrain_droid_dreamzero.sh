@@ -9,7 +9,6 @@
 #SBATCH --output=slurm_outputs/%x/out_%x_%j.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kl0820@princeton.edu
-#SBATCH --exclude=neu301,neu306,neu309,neu312
 
 mkdir -p slurm_outputs/cosmos_droid_dreamzero
 
