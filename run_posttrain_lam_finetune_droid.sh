@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cosmos_lam_ft_bridge
+#SBATCH --job-name=cosmos_lam_ft_droid
 #SBATCH --nodes=1
 #SBATCH --partition=ailab
 #SBATCH --gres=gpu:4
@@ -11,7 +11,7 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kl0820@princeton.edu
 
-mkdir -p slurm_outputs/cosmos_lam_ft_bridge
+mkdir -p slurm_outputs/cosmos_lam_ft_droid
 
 PROJECT_DIR=/scratch/gpfs/AM43/users/kl0820/projects/cosmos-predict2.5
 cd $PROJECT_DIR
@@ -30,10 +30,10 @@ export PYTHONWARNINGS=ignore
 export LAM_STAGE1_CKPT_PATH="/scratch/gpfs/AM43/users/kl0820/cosmos_output/cosmos_predict2_action_conditioned/cosmos_predict_v2p5/2b_oxe10_lam_action_conditioned/checkpoints/iter_000010000/model"
 
 PYTHONPATH=$(pwd) \
-torchrun --nproc_per_node=4 --master_port=12348 \
+torchrun --nproc_per_node=4 --master_port=12349 \
     -m scripts.train \
     --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py \
-    -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320_lam_finetune_bridge \
+    -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320_lam_finetune_droid \
     ~dataloader_train.dataloaders \
     trainer.max_iter=50000 \
     dataloader_train.batch_size=48 \
