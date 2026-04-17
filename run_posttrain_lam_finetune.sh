@@ -37,4 +37,4 @@ torchrun --nproc_per_node=4 --master_port=12348 \
     ~dataloader_train.dataloaders \
     trainer.max_iter=50000 \
     dataloader_train.batch_size=48 \
-    checkpoint.save_iter=500
+    checkpoint.save_iter=5001

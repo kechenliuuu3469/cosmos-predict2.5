@@ -36,6 +36,6 @@ torchrun --nproc_per_node=4 --master_port=12346 \
     -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320_droid_dreamzero \
     ~dataloader_train.dataloaders \
     trainer.max_iter=50000 \
-    dataloader_train.batch_size=48 \
-    checkpoint.save_iter=500
+    dataloader_train.batch_size=32 \
+    checkpoint.save_iter=2000
 

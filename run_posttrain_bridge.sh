@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm_outputs/%x/out_%x_%j.out
 #SBATCH --mail-type=ALL
@@ -35,6 +35,6 @@ torchrun --nproc_per_node=4 --master_port=12345 \
     -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320 \
     ~dataloader_train.dataloaders \
     trainer.max_iter=50000 \
-    dataloader_train.batch_size=48 \
-    checkpoint.save_iter=500
+    dataloader_train.batch_size=32 \
+    checkpoint.save_iter=2000
 
