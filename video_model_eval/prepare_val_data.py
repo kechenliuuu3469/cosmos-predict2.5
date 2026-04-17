@@ -9,57 +9,76 @@ Run once before `run_eval.sh`. Output layout:
 
 The GT composite matches exactly what the model sees during inference so the
 later metric computation is apples-to-apples.
+
+Parallelised across episodes with a process pool; each episode is independent.
+Use --workers to tune for your CPU / IO. --progress shows a tqdm bar.
 """
 
+import argparse
 import json
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import cv2
 import mediapy
 import numpy as np
+from tqdm import tqdm
 
 # --- Configure these paths for your cluster ----------------------------------
 DROID_ROOT = Path("/myuser/kc/datasets/real_data_extracted/droid")
 VIDS = DROID_ROOT / "videos" / "val"
 LATS = DROID_ROOT / "latent_actions_lam" / "val"
 OUT = Path(__file__).resolve().parent / "val_inference_droid"
-MODEL_HW = (256, 320)
+MODEL_HW = (256, 320)  # (H, W)
 GT_FPS = 20
 # -----------------------------------------------------------------------------
 
 
 def stack_dreamzero(left: np.ndarray, right: np.ndarray, wrist: np.ndarray) -> np.ndarray:
     H, W = left.shape[1], left.shape[2]
-    out = []
-    for t in range(min(len(left), len(right), len(wrist))):
+    out = np.empty((min(len(left), len(right), len(wrist)), 2 * H, 2 * W, 3), dtype=np.uint8)
+    for t in range(len(out)):
         wr = cv2.resize(wrist[t], (2 * W, H), interpolation=cv2.INTER_LINEAR)
-        bottom = np.concatenate([left[t], right[t]], axis=1)
-        out.append(np.concatenate([wr, bottom], axis=0))
-    return np.stack(out)
+        out[t, :H] = wr
+        out[t, H:, :W] = left[t]
+        out[t, H:, W:] = right[t]
+    return out
 
 
-def main() -> None:
-    (OUT / "annotations").mkdir(parents=True, exist_ok=True)
-    gt_dir = OUT / "gt_composite"
-    gt_dir.mkdir(exist_ok=True)
+def resize_video(video: np.ndarray, hw: tuple) -> np.ndarray:
+    """cv2.resize per frame — ~10x faster than mediapy.resize_image."""
+    H, W = hw
+    out = np.empty((len(video), H, W, video.shape[-1]), dtype=video.dtype)
+    for t in range(len(video)):
+        out[t] = cv2.resize(video[t], (W, H), interpolation=cv2.INTER_LINEAR)
+    return out
 
-    n_ok, n_skip = 0, 0
-    for ep_dir in sorted(VIDS.iterdir()):
-        ep = ep_dir.name
-        left, right, wrist = ep_dir / "0.mp4", ep_dir / "1.mp4", ep_dir / "2.mp4"
-        npy = LATS / ep / "latent_actions.npy"
-        if not all(p.exists() for p in [left, right, wrist, npy]):
-            n_skip += 1
-            continue
 
-        gt_out = gt_dir / f"{ep}.mp4"
-        if not gt_out.exists():
-            l, r, w = (mediapy.read_video(p) for p in (left, right, wrist))
+def process_one(ep: str) -> tuple[str, str]:
+    """Worker: build one episode's GT mp4 + annotation JSON. Returns (ep, status)."""
+    ep_dir = VIDS / ep
+    left, right, wrist = ep_dir / "0.mp4", ep_dir / "1.mp4", ep_dir / "2.mp4"
+    npy = LATS / ep / "latent_actions.npy"
+    if not all(p.exists() for p in [left, right, wrist, npy]):
+        return ep, "missing"
+
+    gt_out = OUT / "gt_composite" / f"{ep}.mp4"
+    ann_out = OUT / "annotations" / f"{ep}.json"
+
+    if not gt_out.exists():
+        try:
+            l = mediapy.read_video(left)
+            r = mediapy.read_video(right)
+            w = mediapy.read_video(wrist)
             gt = stack_dreamzero(l, r, w)
-            gt = np.stack([mediapy.resize_image(f, MODEL_HW) for f in gt])
+            gt = resize_video(gt, MODEL_HW)
             mediapy.write_video(gt_out, gt, fps=GT_FPS)
+        except Exception as e:
+            return ep, f"error: {e}"
 
-        with open(OUT / "annotations" / f"{ep}.json", "w") as f:
+    if not ann_out.exists():
+        with open(ann_out, "w") as f:
             json.dump(
                 {
                     "videos": [{"video_path": str(left.resolve())}],
@@ -70,11 +89,47 @@ def main() -> None:
                 },
                 f,
             )
-        n_ok += 1
+    return ep, "ok"
 
-    print(f"Prepared {n_ok} episodes, skipped {n_skip} (missing files).")
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=max(1, (os.cpu_count() or 4) // 2),
+        help="parallel workers (default: half of CPU cores). ffmpeg encoding is CPU-heavy; too many workers can thrash I/O.",
+    )
+    args = ap.parse_args()
+
+    (OUT / "annotations").mkdir(parents=True, exist_ok=True)
+    (OUT / "gt_composite").mkdir(parents=True, exist_ok=True)
+
+    episodes = sorted(p.name for p in VIDS.iterdir() if p.is_dir())
+    print(f"Found {len(episodes)} episode dirs under {VIDS}")
+    print(f"Running with {args.workers} workers")
+
+    counts = {"ok": 0, "missing": 0}
+    errors = []
+
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(process_one, ep): ep for ep in episodes}
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="episodes"):
+            ep, status = fut.result()
+            if status in counts:
+                counts[status] += 1
+            else:
+                errors.append((ep, status))
+
+    print(
+        f"\nDone. ok={counts['ok']}  missing={counts['missing']}  errors={len(errors)}"
+    )
+    if errors:
+        print("First few errors:")
+        for ep, msg in errors[:5]:
+            print(f"  {ep}: {msg}")
     print(f"Annotations: {OUT / 'annotations'}")
-    print(f"GT videos:   {gt_dir}")
+    print(f"GT videos:   {OUT / 'gt_composite'}")
 
 
 if __name__ == "__main__":
