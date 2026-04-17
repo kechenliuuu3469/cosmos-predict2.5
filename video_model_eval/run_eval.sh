@@ -61,11 +61,14 @@ for ITER_NUM in "$@"; do
 
     # -- 2. Inference (skip if all chunk mp4s already exist) -----------------
     ANN_DIR="$EVAL_DIR/val_inference_droid/annotations"
+    mkdir -p "$GEN_DIR"
     N_EP=$(find "$ANN_DIR" -name '*.json' | wc -l)
-    N_GEN=$(find "$GEN_DIR" -name '*_chunk.mp4' 2>/dev/null | wc -l || echo 0)
-    if [[ "$N_GEN" -lt "$N_EP" ]]; then
-        echo "[infer] $N_GEN/$N_EP done, generating missing"
-        mkdir -p "$GEN_DIR"
+    N_GEN=$(find "$GEN_DIR" -name '*_chunk.mp4' | wc -l)
+    # Also cap by --end in inference_params.json so "target" matches what we actually generate
+    TARGET_END=$(python -c "import json; print(json.load(open('$PARAMS_TEMPLATE'))['end'])")
+    TARGET=$(( TARGET_END < N_EP ? TARGET_END : N_EP ))
+    if [[ "$N_GEN" -lt "$TARGET" ]]; then
+        echo "[infer] $N_GEN/$TARGET done, generating missing"
         PARAMS_TMP=$(mktemp --suffix=.json)
         sed "s|__SAVE_ROOT__|$GEN_DIR|g" "$PARAMS_TEMPLATE" > "$PARAMS_TMP"
         python examples/action_conditioned.py \
