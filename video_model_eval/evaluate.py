@@ -33,9 +33,16 @@ def main():
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--iter", type=int, required=True, help="checkpoint iteration (for logging)")
     ap.add_argument("--max-episodes", type=int, default=None)
+    ap.add_argument("--save-videos", action="store_true",
+                    help="write side-by-side (GT | Gen) mp4s to <out-dir>/videos/")
+    ap.add_argument("--video-fps", type=int, default=20,
+                    help="fps for saved side-by-side videos (default: 20, matches GT_FPS).")
     args = ap.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    videos_dir = args.out_dir / "videos"
+    if args.save_videos:
+        videos_dir.mkdir(parents=True, exist_ok=True)
     lpips_fn = LPIPSWrapper()
 
     gt_videos, gen_videos, rows = [], [], []
@@ -75,6 +82,16 @@ def main():
         )
         gt_videos.append(gt)
         gen_videos.append(gen)
+
+        if args.save_videos:
+            # GT on the left, Gen on the right, with a 4-px black separator.
+            sep = np.zeros((T, gt.shape[1], 4, 3), dtype=gt.dtype)
+            side_by_side = np.concatenate([gt, sep, gen], axis=2)
+            mediapy.write_video(
+                videos_dir / f"{ep}_side_by_side.mp4",
+                side_by_side,
+                fps=args.video_fps,
+            )
 
     if not rows:
         raise RuntimeError(f"No paired episodes found under {args.gen_dir}")

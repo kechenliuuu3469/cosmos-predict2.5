@@ -1,6 +1,6 @@
 {
-  "name": "stage1_lam_droid_val",
-  "input_root": "video_model_eval/val_inference_droid",
+  "name": "stage1_lam_droid___SPLIT__",
+  "input_root": "__INPUT_ROOT__",
   "input_json_sub_folder": "annotations",
   "save_root": "__SAVE_ROOT__",
   "chunk_size": 12,

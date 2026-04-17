@@ -1,9 +1,14 @@
 """
-Build per-episode annotation JSONs + GT composite videos for DROID val eval.
+Build per-episode annotation JSONs + GT composite videos for DROID eval.
 
-Run once before `run_eval.sh`. Output layout:
+Run once before `run_eval.sh`, for either the val or train split:
 
-    video_model_eval/val_inference_droid/
+    python -m video_model_eval.prepare_val_data                # val (default)
+    python -m video_model_eval.prepare_val_data --split train  # train
+
+Output layout:
+
+    video_model_eval/{split}_inference_droid/
     ├── annotations/<ep>.json           # paths to 3 views + latent_actions.npy
     └── gt_composite/<ep>.mp4           # dreamzero-stacked GT, resized to 256x320
 
@@ -11,7 +16,11 @@ The GT composite matches exactly what the model sees during inference so the
 later metric computation is apples-to-apples.
 
 Parallelised across episodes with a process pool; each episode is independent.
-Use --workers to tune for your CPU / IO. --progress shows a tqdm bar.
+Use --workers to tune for your CPU / IO. --progress shows a tqdm bar. For the
+much larger train split use --max-episodes to subsample.
+
+Paths can be overridden via the DROID_ROOT env var if your data lives
+elsewhere.
 """
 
 import argparse
@@ -25,14 +34,16 @@ import mediapy
 import numpy as np
 from tqdm import tqdm
 
-# --- Configure these paths for your cluster ----------------------------------
-DROID_ROOT = Path("/myuser/kc/datasets/real_data_extracted/droid")
-VIDS = DROID_ROOT / "videos" / "val"
-LATS = DROID_ROOT / "latent_actions_lam" / "val"
-OUT = Path(__file__).resolve().parent / "val_inference_droid"
+# --- Configure these paths for your cluster (or set DROID_ROOT env var) ------
+DROID_ROOT = Path(os.environ.get("DROID_ROOT", "/myuser/kc/datasets/real_data_extracted/droid"))
 MODEL_HW = (256, 320)  # (H, W)
 GT_FPS = 20
 # -----------------------------------------------------------------------------
+
+# Populated by main() based on --split.
+VIDS: Path = None  # type: ignore
+LATS: Path = None  # type: ignore
+OUT: Path = None  # type: ignore
 
 
 def stack_dreamzero(left: np.ndarray, right: np.ndarray, wrist: np.ndarray) -> np.ndarray:
@@ -95,6 +106,18 @@ def process_one(ep: str) -> tuple[str, str]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
+        "--split",
+        choices=["train", "val"],
+        default="val",
+        help="DROID split to prepare (default: val).",
+    )
+    ap.add_argument(
+        "--max-episodes",
+        type=int,
+        default=None,
+        help="optional cap on number of episodes (useful for the large train split).",
+    )
+    ap.add_argument(
         "--workers",
         type=int,
         default=max(1, (os.cpu_count() or 4) // 2),
@@ -102,10 +125,18 @@ def main() -> None:
     )
     args = ap.parse_args()
 
+    global VIDS, LATS, OUT
+    VIDS = DROID_ROOT / "videos" / args.split
+    LATS = DROID_ROOT / "latent_actions_lam" / args.split
+    OUT = Path(__file__).resolve().parent / f"{args.split}_inference_droid"
+
     (OUT / "annotations").mkdir(parents=True, exist_ok=True)
     (OUT / "gt_composite").mkdir(parents=True, exist_ok=True)
 
     episodes = sorted(p.name for p in VIDS.iterdir() if p.is_dir())
+    if args.max_episodes is not None:
+        episodes = episodes[: args.max_episodes]
+    print(f"Split: {args.split}")
     print(f"Found {len(episodes)} episode dirs under {VIDS}")
     print(f"Running with {args.workers} workers")
 
