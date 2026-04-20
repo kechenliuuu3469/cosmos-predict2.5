@@ -27,7 +27,13 @@ def load_lam_action_fn():
             h, w = map(int, args.resolution.split(","))
             img = mediapy.resize_image(img, (h, w))
 
+        # Stride LAM latents by fps_downsample_ratio to match training's
+        # stride-d sampling (dataset_oxe_lam.Dataset_OXE_LAM._load_actions:
+        # arr[start + j*d] for j in 0..seq_len-1). For d==1 this is a no-op.
         actions = np.load(json_data["latent_actions_path"]).astype(np.float32)
+        d = int(getattr(args, "fps_downsample_ratio", 1) or 1)
+        if d > 1:
+            actions = actions[::d]
 
         return {
             "actions": actions,

@@ -78,6 +78,13 @@ def _process(rel: str) -> tuple[str, str]:
         try:
             views = [mediapy.read_video(p) for p in view_paths]
             comp = composite(views, _SPEC.stacking_mode)
+            # Stride by fps_downsample_ratio so GT frame k corresponds to the
+            # k-th *training target* (native frame k*d). Inference produces one
+            # frame per stride-d training step, so strided GT is what's needed
+            # for frame-aligned PSNR/SSIM/LPIPS.
+            d = _SPEC.fps_downsample_ratio
+            if d > 1:
+                comp = comp[::d]
             comp = resize_video(comp, MODEL_HW)
             mediapy.write_video(gt_out, comp, fps=_SPEC.save_fps)
         except Exception as e:
