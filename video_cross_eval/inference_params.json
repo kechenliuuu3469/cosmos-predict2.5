@@ -1,0 +1,19 @@
+{
+  "name": "cross_eval___DATASET______SPLIT__",
+  "input_root": "__INPUT_ROOT__",
+  "input_json_sub_folder": "annotations",
+  "save_root": "__SAVE_ROOT__",
+  "chunk_size": 12,
+  "guidance": 0,
+  "resolution": "256,320",
+  "camera_id": 0,
+  "start": 0,
+  "end": 10,
+  "fps_downsample_ratio": 1,
+  "num_latent_conditional_frames": 1,
+  "start_frame_idx": 0,
+  "save_fps": 20,
+  "action_load_fn": "video_cross_eval.action_loader.load_lam_action_fn",
+  "seed": 0,
+  "prompt": null
+}

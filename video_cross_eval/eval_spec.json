@@ -1,0 +1,13 @@
+{
+  "default_num_episodes": 10,
+  "datasets": {
+    "droid": 10,
+    "bridge": 10,
+    "fractal": 10,
+    "fmb": 10,
+    "bc_z": 10,
+    "taco_play": 10,
+    "furniture_bench": 10,
+    "egodex": 10
+  }
+}
