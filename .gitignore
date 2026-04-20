@@ -209,3 +209,11 @@ cython_debug/
 
 run_postrain_lam_vertical.sh
 run_postrain_droid_vertical.sh
+
+# droid_baseline_eval: only track source files, ignore generated artifacts
+# (gt_composite/, generations*/, results*/, g0/, g3/, g7/, plots/, ...)
+/droid_baseline_eval/*
+!/droid_baseline_eval/*.py
+!/droid_baseline_eval/*.json
+!/droid_baseline_eval/*.sh
+!/droid_baseline_eval/*.md

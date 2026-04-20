@@ -1,0 +1,23 @@
+{
+  "name": "droid_dreamzero_val",
+  "input_root": "/scratch/gpfs/AM43/users/kl0820/datasets/oxe_mp4/droid",
+  "input_json_sub_folder": "annotation2/val",
+  "save_root": "__SAVE_ROOT__",
+  "chunk_size": 12,
+  "guidance": 0,
+  "resolution": "256,320",
+  "camera_id": 0,
+  "start": 0,
+  "end": 5,
+  "fps_downsample_ratio": 1,
+  "num_latent_conditional_frames": 1,
+  "start_frame_idx": 0,
+  "save_fps": 20,
+  "action_scaler": 18.672,
+  "gripper_scale": 1.2438,
+  "state_key": "state",
+  "gripper_key": "continuous_gripper_state",
+  "action_load_fn": "droid_baseline_eval.action_loader.load_droid_dreamzero_action_fn",
+  "seed": 0,
+  "prompt": null
+}
