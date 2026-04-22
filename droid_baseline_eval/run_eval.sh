@@ -10,8 +10,11 @@
 #
 # Output layout (one tree per guidance):
 #   generations/g<G>/iter_XXXXXXXX/<ep>_chunk.mp4
-#   results/g<G>/iter_XXXXXXXX/{per_episode.csv, per_timestep.npz,
-#                               summary.json, videos/<ep>_side_by_side.mp4}
+#   results/g<G>/droid/iter_XXXXXXXX/{per_episode.csv, per_timestep.npz,
+#                                     summary.json, videos/<ep>_side_by_side.mp4}
+#
+# Metrics are computed per view (wrist/left/right/stacked) — uses the droid
+# dreamzero spec in video_cross_eval/datasets.py for crop boxes.
 #
 set -euo pipefail
 
@@ -32,7 +35,6 @@ GT_DIR="$EVAL_DIR/gt_composite"
 PARAMS_TEMPLATE="$EVAL_DIR/inference_params.json"
 SAVE_VIDEOS="${SAVE_VIDEOS:-1}"
 GUIDANCES="${GUIDANCES:-0 1 3 7}"
-VIDEO_FPS="${VIDEO_FPS:-20}"
 # ----------------------------------------------------------------------------
 
 mkdir -p "$GEN_ROOT" "$RES_ROOT"
@@ -75,7 +77,7 @@ for ITER_NUM in "$@"; do
 
     for G in $GUIDANCES; do
         GEN_DIR="$GEN_ROOT/g$G/$ITER"
-        RES_DIR="$RES_ROOT/g$G/$ITER"
+        RES_DIR="$RES_ROOT/g$G/droid/$ITER"
 
         echo "-------- guidance=$G --------"
 
@@ -103,21 +105,21 @@ json.dump(d, open(sys.argv[4], 'w'))
             echo "[infer g=$G] already done ($N_GEN/$TARGET_END)"
         fi
 
-        # -- 3. Metrics --------------------------------------------------
+        # -- 3. Metrics (per view: wrist/left/right/stacked) -----------------
         if [[ ! -f "$RES_DIR/summary.json" ]]; then
-            echo "[eval g=$G] computing metrics"
+            echo "[eval g=$G] computing per-view metrics"
             mkdir -p "$RES_DIR"
             EVAL_ARGS=(
                 --gen-dir "$GEN_DIR"
                 --gt-dir "$GT_DIR"
                 --out-dir "$RES_DIR"
                 --iter "$ITER_NUM"
-                --video-fps "$VIDEO_FPS"
+                --dataset droid
             )
             if [[ "$SAVE_VIDEOS" == "1" ]]; then
                 EVAL_ARGS+=(--save-videos)
             fi
-            python -m video_model_eval.evaluate "${EVAL_ARGS[@]}"
+            python -m video_cross_eval.evaluate "${EVAL_ARGS[@]}"
         else
             echo "[eval g=$G] already done"
         fi
@@ -125,7 +127,7 @@ json.dump(d, open(sys.argv[4], 'w'))
 done
 
 echo
-echo "All done. Aggregate per guidance:"
+echo "All done. Aggregate per guidance (per-view tables + plots):"
 for G in $GUIDANCES; do
-    echo "    python -m video_model_eval.aggregate --results-root $RES_ROOT/g$G --out-dir $EVAL_DIR/g$G"
+    echo "    python -m video_cross_eval.aggregate --results-root $RES_ROOT/g$G --out-dir $EVAL_DIR/g$G"
 done
