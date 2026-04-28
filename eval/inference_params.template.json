@@ -1,0 +1,19 @@
+{
+  "name": "__NAME__",
+  "input_root": "__INPUT_ROOT__",
+  "input_json_sub_folder": "",
+  "save_root": "__SAVE_ROOT__",
+  "chunk_size": 12,
+  "guidance": 0,
+  "resolution": "256,320",
+  "camera_id": 0,
+  "start": 0,
+  "end": 10,
+  "fps_downsample_ratio": 1,
+  "num_latent_conditional_frames": 1,
+  "start_frame_idx": 0,
+  "save_fps": 20,
+  "action_load_fn": "__ACTION_LOAD_FN__",
+  "seed": 0,
+  "prompt": null
+}
