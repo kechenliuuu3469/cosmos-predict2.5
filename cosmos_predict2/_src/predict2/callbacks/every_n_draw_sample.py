@@ -340,6 +340,17 @@ class EveryNDrawSample(EveryN):
                 fps=self.fps,
             )
 
+        # Local mp4 grid (gen rows on top, raw_data row at the bottom -> a
+        # natural side-by-side qualitative check). One file per replicate
+        # because base_fp_wo_ext carries ReplicateID. Mirrors the s3 layout.
+        if not is_single_frame and self.data_parallel_id < self.n_sample_to_save:
+            os.makedirs(self.local_dir, exist_ok=True)
+            save_img_or_video(
+                rearrange(to_show[:, :n_viz_sample], "n b c t h w -> c t (n h) (b w)"),
+                f"{self.local_dir}/{base_fp_wo_ext}",
+                fps=self.fps,
+            )
+
         file_base_fp = f"{base_fp_wo_ext}_resize.jpg"
         local_path = f"{self.local_dir}/{file_base_fp}"
 
