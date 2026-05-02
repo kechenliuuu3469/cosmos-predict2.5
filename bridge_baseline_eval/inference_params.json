@@ -1,0 +1,21 @@
+{
+  "name": "bridge_test_baseline",
+  "input_root": "/scratch/gpfs/AM43/users/kl0820/datasets/oxe_mp4/bridge",
+  "input_json_sub_folder": "annotation/test",
+  "save_root": "__SAVE_ROOT__",
+  "chunk_size": 12,
+  "guidance": 0,
+  "resolution": "256,320",
+  "camera_id": 0,
+  "start": 0,
+  "end": 10,
+  "fps_downsample_ratio": 1,
+  "num_latent_conditional_frames": 1,
+  "start_frame_idx": 0,
+  "save_fps": 4,
+  "gripper_scale": 1.0,
+  "action_scaler": 20.0,
+  "action_load_fn": "cosmos_predict2.action_conditioned.load_default_action_fn",
+  "seed": 0,
+  "prompt": null
+}

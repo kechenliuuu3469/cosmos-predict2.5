@@ -12,20 +12,17 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-RES_ROOT = Path(__file__).resolve().parent / "results"
-OUT_CSV = Path(__file__).resolve().parent / "all_checkpoints.csv"
-PLOT_DIR = Path(__file__).resolve().parent / "plots"
 
-
-def load_all():
+def load_all(res_root: Path):
     records = []
-    for d in sorted(RES_ROOT.glob("iter_*")):
+    for d in sorted(res_root.glob("iter_*")):
         js = d / "summary.json"
         npz = d / "per_timestep.npz"
         if not js.exists():
@@ -39,8 +36,22 @@ def load_all():
 
 
 def main():
-    PLOT_DIR.mkdir(exist_ok=True)
-    recs = load_all()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--results-root", type=Path,
+                    default=Path(__file__).resolve().parent / "results",
+                    help="Directory containing iter_* subdirs with summary.json.")
+    ap.add_argument("--out-dir", type=Path, default=None,
+                    help="Where to write all_checkpoints.csv + plots/. "
+                         "Defaults to the parent of --results-root.")
+    args = ap.parse_args()
+
+    RES_ROOT = args.results_root
+    OUT_DIR = args.out_dir if args.out_dir is not None else RES_ROOT.parent
+    OUT_CSV = OUT_DIR / "all_checkpoints.csv"
+    PLOT_DIR = OUT_DIR / "plots"
+
+    PLOT_DIR.mkdir(parents=True, exist_ok=True)
+    recs = load_all(RES_ROOT)
     if not recs:
         print(f"No results found under {RES_ROOT}.")
         return

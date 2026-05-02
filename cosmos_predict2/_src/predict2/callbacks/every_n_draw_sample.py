@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import math
 import os
 from contextlib import nullcontext
@@ -115,18 +116,40 @@ class EveryNDrawSample(EveryN):
         self.num_sampling_step = num_sampling_step
         self.rank = distributed.get_rank()
         self.fps = fps
+        # Lock conditioning to the first batch each replicate sees, so
+        # iter-to-iter mp4s show progression on the same scene.
+        self._cached_batch_cpu: Optional[dict] = None
+        self._cache_path: Optional[str] = None
+        # Per-fire PSNR/SSIM/LPIPS payload, picked up by every_n_impl for wandb.
+        self._last_metrics: Optional[dict] = None
+        self._lpips_fn = None  # lazy init in _save_metrics_json
 
     def on_train_start(self, model: ImaginaireModel, iteration: int = 0) -> None:
         config_job = self.config.job
         self.local_dir = f"{config_job.path_local}/{self.name}"
+        os.makedirs(self.local_dir, exist_ok=True)
         if distributed.get_rank() == 0:
-            os.makedirs(self.local_dir, exist_ok=True)
             log.info(f"Callback: local_dir: {self.local_dir}")
 
         if parallel_state.is_initialized():
             self.data_parallel_id = parallel_state.get_data_parallel_rank()
         else:
             self.data_parallel_id = self.rank
+
+        # Restore cached fixed-scene batch on resume so the rendered scene
+        # stays consistent across restarts.
+        tag = "ema" if self.is_ema else "reg"
+        self._cache_path = os.path.join(
+            self.local_dir, f"cached_batch_rank{self.data_parallel_id:04d}_{tag}.pt"
+        )
+        if os.path.exists(self._cache_path):
+            self._cached_batch_cpu = torch.load(
+                self._cache_path, map_location="cpu", weights_only=False
+            )
+            log.info(
+                f"Callback: loaded cached fixed-scene batch from {self._cache_path}",
+                rank0_only=False,
+            )
 
         if self.use_negative_prompt:
             if self.prompt_type == "t5_xxl":
@@ -179,7 +202,9 @@ class EveryNDrawSample(EveryN):
             raw_data.float().cpu(),
         )
 
-        base_fp_wo_ext = f"{tag}_ReplicateID{self.data_parallel_id:04d}_x0_Iter{iteration:09d}"
+        base_fp_wo_ext = (
+            f"replicate{self.data_parallel_id:04d}/{tag}/iter{iteration:09d}_x0"
+        )
 
         local_path = self.run_save(to_show, batch_size, base_fp_wo_ext)
         return local_path, torch.tensor(mse_loss_list).cuda(), sigmas
@@ -194,6 +219,27 @@ class EveryNDrawSample(EveryN):
             context = nullcontext
 
         tag = "ema" if self.is_ema else "reg"
+
+        # Cache the first batch we see (raw, before any text-encoder mutation),
+        # then replay it forever so this replicate always renders the same
+        # scene. mutations downstream go to a fresh CUDA dict, so the CPU cache
+        # stays clean.
+        if self._cached_batch_cpu is None:
+            self._cached_batch_cpu = {
+                k: (v.detach().cpu().clone() if torch.is_tensor(v) else v)
+                for k, v in data_batch.items()
+            }
+            if self._cache_path and self.data_parallel_id < self.n_sample_to_save:
+                torch.save(self._cached_batch_cpu, self._cache_path)
+                log.info(
+                    f"Callback: saved fixed-scene batch to {self._cache_path}",
+                    rank0_only=False,
+                )
+        data_batch = {
+            k: (v.cuda(non_blocking=True) if torch.is_tensor(v) else v)
+            for k, v in self._cached_batch_cpu.items()
+        }
+
         sample_counter = getattr(trainer, "sample_counter", iteration)
         batch_info = {
             "data": {
@@ -262,6 +308,10 @@ class EveryNDrawSample(EveryN):
                 info.update({f"x0_pred_mse_{tag}/Sigma{sigmas[i]:0.5f}": mse_loss[i] for i in range(len(mse_loss))})
 
             info[f"{self.name}/{tag}_sample"] = wandb.Image(sample_img_fp, caption=f"{sample_counter}")
+            if self._last_metrics is not None:
+                info[f"{self.name}/{tag}_psnr"] = self._last_metrics["psnr_mean"]
+                info[f"{self.name}/{tag}_ssim"] = self._last_metrics["ssim_mean"]
+                info[f"{self.name}/{tag}_lpips"] = self._last_metrics["lpips_mean"]
             wandb.log(
                 info,
                 step=iteration,
@@ -271,6 +321,12 @@ class EveryNDrawSample(EveryN):
     @misc.timer("EveryNDrawSample: sample")
     def sample(self, trainer, model, data_batch, output_batch, loss, iteration):
         tag = "ema" if self.is_ema else "reg"
+
+        # Fix sampling noise so the same replicate uses identical noise every
+        # iteration — the only thing changing across iters is the model.
+        seed = 1234 + self.data_parallel_id
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
         # Obtain text embeddings online
         text_encoder_config = getattr(model.config, "text_encoder_config", None)
@@ -319,7 +375,9 @@ class EveryNDrawSample(EveryN):
 
         to_show.append(raw_data.float().cpu())
 
-        base_fp_wo_ext = f"{tag}_ReplicateID{self.data_parallel_id:04d}_Sample_Iter{iteration:09d}"
+        base_fp_wo_ext = (
+            f"replicate{self.data_parallel_id:04d}/{tag}/iter{iteration:09d}_sample"
+        )
 
         batch_size = x0.shape[0]
         if is_tp_cp_pp_rank0():
@@ -331,6 +389,14 @@ class EveryNDrawSample(EveryN):
         to_show = (1.0 + torch.stack(to_show, dim=0).clamp(-1, 1)) / 2.0  # [n, b, c, t, h, w]
         is_single_frame = to_show.shape[3] == 1
         n_viz_sample = min(self.n_viz_sample, batch_size)
+
+        # base_fp_wo_ext is now nested (replicate####/<tag>/iter########_*),
+        # so make sure the parent exists before any local write.
+        if self.data_parallel_id < self.n_sample_to_save:
+            os.makedirs(
+                os.path.dirname(f"{self.local_dir}/{base_fp_wo_ext}"),
+                exist_ok=True,
+            )
 
         # ! we only save first n_sample_to_save video!
         if self.save_s3 and self.data_parallel_id < self.n_sample_to_save:
@@ -344,12 +410,16 @@ class EveryNDrawSample(EveryN):
         # natural side-by-side qualitative check). One file per replicate
         # because base_fp_wo_ext carries ReplicateID. Mirrors the s3 layout.
         if not is_single_frame and self.data_parallel_id < self.n_sample_to_save:
-            os.makedirs(self.local_dir, exist_ok=True)
             save_img_or_video(
                 rearrange(to_show[:, :n_viz_sample], "n b c t h w -> c t (n h) (b w)"),
                 f"{self.local_dir}/{base_fp_wo_ext}",
                 fps=self.fps,
             )
+            # Compute PSNR/SSIM/LPIPS for the rendered panels (guidance[0] vs
+            # raw_data) and dump alongside the mp4. Also stashed on the
+            # instance so every_n_impl can log to wandb.
+            if base_fp_wo_ext.endswith("_sample"):
+                self._save_metrics_json(to_show, n_viz_sample, base_fp_wo_ext)
 
         file_base_fp = f"{base_fp_wo_ext}_resize.jpg"
         local_path = f"{self.local_dir}/{file_base_fp}"
@@ -384,3 +454,46 @@ class EveryNDrawSample(EveryN):
 
             return local_path
         return None
+
+    def _save_metrics_json(self, to_show: torch.Tensor, n_viz_sample: int, base_fp_wo_ext: str) -> None:
+        """Per-frame PSNR / SSIM / LPIPS for the n_viz_sample panels at guidance[0] vs raw_data.
+
+        ``to_show`` is [n=guidance+1, b, c, t, h, w] in [0, 1]. We compare the
+        first guidance row to the GT (last) row across the visualised samples.
+        Mirrors eval/metrics.py:compute_frame_metrics so numbers are
+        comparable to the offline pipeline.
+        """
+        try:
+            from eval.metrics import LPIPSWrapper, compute_frame_metrics
+        except ImportError as e:
+            log.warning(f"Skipping metrics: failed to import eval.metrics ({e})")
+            return
+
+        if self._lpips_fn is None:
+            self._lpips_fn = LPIPSWrapper()
+
+        gen = to_show[0, :n_viz_sample]   # [n, c, t, h, w]
+        gt = to_show[-1, :n_viz_sample]
+        per_sample = []
+        for i in range(n_viz_sample):
+            g = (gen[i].permute(1, 2, 3, 0).clamp(0, 1) * 255).to(torch.uint8).numpy()
+            r = (gt[i].permute(1, 2, 3, 0).clamp(0, 1) * 255).to(torch.uint8).numpy()
+            fm = compute_frame_metrics(r, g, self._lpips_fn, skip_first=1)
+            per_sample.append({
+                "psnr_mean": float(np.mean(fm.psnr)) if fm.psnr else float("nan"),
+                "ssim_mean": float(np.mean(fm.ssim)) if fm.ssim else float("nan"),
+                "lpips_mean": float(np.mean(fm.lpips)) if fm.lpips else float("nan"),
+                "psnr_per_frame": [float(x) for x in fm.psnr],
+                "ssim_per_frame": [float(x) for x in fm.ssim],
+                "lpips_per_frame": [float(x) for x in fm.lpips],
+            })
+        agg = {
+            "n_samples": n_viz_sample,
+            "psnr_mean": float(np.mean([m["psnr_mean"] for m in per_sample])),
+            "ssim_mean": float(np.mean([m["ssim_mean"] for m in per_sample])),
+            "lpips_mean": float(np.mean([m["lpips_mean"] for m in per_sample])),
+            "per_sample": per_sample,
+        }
+        with open(f"{self.local_dir}/{base_fp_wo_ext}_metrics.json", "w") as f:
+            json.dump(agg, f, indent=2)
+        self._last_metrics = agg

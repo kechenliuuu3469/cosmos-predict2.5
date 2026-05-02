@@ -296,6 +296,10 @@ def inference(
         action_data = action_load_fn()(json_data, video_path, inference_args)
         actions = action_data["actions"]
         img_array = action_data["initial_frame"]
+        # Optional: dual-T5 language conditioning. The lang_zero loader returns
+        # one (task_text, action_text) tuple per K=12 chunk; when present, both
+        # streams are passed to generate_vid2world per chunk.
+        chunk_captions = action_data.get("chunk_captions")
 
         img_name = annotation_path.split("/")[-1].split(".")[0]
 
@@ -330,13 +334,25 @@ def inference(
             vid_input = (vid_input * 255.0).to(torch.uint8)
             vid_input = vid_input.unsqueeze(0).permute(0, 2, 1, 3, 4)  # (B, C, T, H, W)
 
+            # Per-chunk dual-T5 strings (lang_zero loader). Chunks are non-overlapping
+            # K=inference_args.chunk_size, so chunk index = i // chunk_size.
+            if chunk_captions is not None:
+                chunk_idx = i // inference_args.chunk_size
+                task_text, action_text = chunk_captions[chunk_idx]
+                chunk_prompt = task_text
+                chunk_action_caption = action_text
+            else:
+                chunk_prompt = inference_args.prompt or ""
+                chunk_action_caption = None
+
             # Call generate_vid2world
             video = video2world_cli.generate_vid2world(
-                prompt=inference_args.prompt or "",
+                prompt=chunk_prompt,
                 input_path=vid_input,
                 action=torch.from_numpy(actions_chunk).float()
                 if isinstance(actions_chunk, np.ndarray)
                 else actions_chunk,
+                action_caption=chunk_action_caption,
                 guidance=inference_args.guidance,
                 num_video_frames=num_video_frames,
                 num_latent_conditional_frames=inference_args.num_latent_conditional_frames,

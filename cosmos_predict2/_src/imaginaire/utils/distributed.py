@@ -52,7 +52,10 @@ def init() -> int | None:
     try:
         device = Device(local_rank)
         os.sched_setaffinity(0, device.get_cpu_affinity())
-    except pynvml.NVMLError as e:
+    except (pynvml.NVMLError, OSError) as e:
+        # OSError(EINVAL): the GPU's NUMA-affined CPUs aren't in this
+        # process's Slurm cgroup allowed set (common on shared clusters
+        # like Della when --cpus-per-task is small). Skip affinity pinning.
         log.warning(f"Failed to set device affinity: {e}")
     # Set up NCCL communication.
     os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "0"

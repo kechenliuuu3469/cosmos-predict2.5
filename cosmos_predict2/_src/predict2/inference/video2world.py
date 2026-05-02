@@ -401,6 +401,7 @@ class Video2WorldInference:
         use_neg_prompt: bool = True,
         camera: CameraConditionInputs | None = None,
         action: torch.Tensor | None = None,
+        action_caption: str | None = None,
     ):
         """
         Prepares the input data batch for the diffusion model.
@@ -458,10 +459,26 @@ class Video2WorldInference:
                     data_batch={"ai_caption": [negative_prompt], "images": None},
                     input_caption_key="ai_caption",
                 )
+            # Optional second T5 stream: per-chunk action_caption used by the
+            # OXE-language dual-T5 conditioner (see action_conditioned/conditioner.py
+            # ActionConditionedLanguageConditionerConfig). Mirrors the training
+            # path in text2world_model_rectified_flow.forward (max_tokens=1024).
+            if action_caption is not None:
+                data_batch["action_caption"] = [action_caption]
+                data_batch["action_t5_embeddings"] = self.model.text_encoder.compute_text_embeddings_online(
+                    data_batch={"action_caption": [action_caption], "images": None},
+                    input_caption_key="action_caption",
+                    max_tokens=1024,
+                )
         else:
             data_batch["t5_text_embeddings"] = get_text_embedding(prompt)
             if use_neg_prompt:
                 data_batch["neg_t5_text_embeddings"] = get_text_embedding(negative_prompt)
+            if action_caption is not None:
+                raise NotImplementedError(
+                    "action_caption requires an online text encoder; offline get_text_embedding "
+                    "is not configured for the dual-T5 path."
+                )
 
         # Move tensors to GPU and convert to bfloat16 if they are floating point
         for k, v in data_batch.items():
@@ -484,6 +501,7 @@ class Video2WorldInference:
         negative_prompt: str = _DEFAULT_NEGATIVE_PROMPT,
         camera: CameraConditionInputs | None = None,
         action: torch.Tensor | None = None,
+        action_caption: str | None = None,
         num_steps: int = 35,
     ):
         """
@@ -567,6 +585,7 @@ class Video2WorldInference:
             prompt=prompt,
             camera=camera,
             action=action,
+            action_caption=action_caption,
             num_conditional_frames=num_latent_conditional_frames,
             negative_prompt=negative_prompt,
             use_neg_prompt=True,

@@ -29,7 +29,7 @@ ac_reason_embeddings_rectified_flow_2b_256_320_oxe_lam = LazyDict(
         ),
         optimizer=dict(
             lr=32e-5,
-            weight_decay=0.1,
+            weight_decay=1e-5,
         ),
         checkpoint=dict(
             save_iter=2_000,

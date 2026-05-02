@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=14
 #SBATCH --mem=256G
-#SBATCH --time=16:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=slurm_outputs/%x/out_%x_%j.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kl0820@princeton.edu
@@ -32,6 +32,6 @@ torchrun --nproc_per_node=4 --master_port=12347 \
     --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py \
     -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320_oxe_ee \
     ~dataloader_train.dataloaders \
-    trainer.max_iter=100000 \
+    trainer.max_iter=750000 \
     dataloader_train.batch_size=32 \
     checkpoint.save_iter=2000

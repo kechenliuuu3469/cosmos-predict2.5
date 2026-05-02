@@ -31,5 +31,6 @@ torchrun --nproc_per_node=4 --master_port=12351 \
     --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py \
     -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320_oxe_language \
     ~dataloader_train.dataloaders \
+    job.name=2b_oxe_language_bcz_weighted \
     trainer.max_iter=100000 \
     dataloader_train.batch_size=32

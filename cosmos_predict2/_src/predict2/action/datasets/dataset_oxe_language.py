@@ -7,9 +7,13 @@ dreamzero / horizontal stacking, resize preprocessing, and fps
 downsampling all come straight from the parent class. The only things
 this subclass changes are:
 
-1. Sample enumeration: walks ``<dataset>/language/*.json`` instead of the
+1. Sample enumeration: walks ``<dataset>/new_lang/*.json`` instead of the
    annotation directory. Each episode produces non-overlapping K=12
-   chunks in the model's downsampled frame rate.
+   chunks in the model's downsampled frame rate. ``new_lang/`` labels are
+   indexed at MODEL rate — row ``k`` describes
+   ``delta(state[k*s] -> state[(k+1)*s])`` where ``s = fps_downsample_ratio``
+   — so step ``i`` of a chunk reads ``labels[start_model + i]`` directly
+   (no raw-rate stride).
 2. ``__getitem__``: returns zero numerical actions, builds two
    independent conditioning strings (task + per-chunk action text) via
    ``format_chunk``, and sets ``ai_caption`` / ``action_caption`` for
@@ -32,6 +36,7 @@ numerical configs:
 import json
 import os
 import random
+import re
 import traceback
 import warnings
 
@@ -79,7 +84,28 @@ LANG_CONFIGS = {
 }
 
 
-def format_chunk(task_description, action_labels, start_frame, K=12, fps_downsample_ratio=1):
+_COMPRESS_PATTERNS = [
+    (re.compile(r"\s+direction\b"), ""),
+    (re.compile(r"\s*\bcm\b"), ""),
+    (re.compile(r"\s*\bmrad\b"), ""),
+]
+
+
+def _compress_label(label: str) -> str:
+    """Drop the redundant 'direction' word and the (always cm/mrad) units.
+
+    The new_lang labels follow a fixed 7-tuple template across all 6 OXE
+    datasets — translation always in cm, rotation always in mrad — so the
+    units are uninformative and the word 'direction' is filler. Removing
+    them cuts ~16% of tokens per K=12 chunk, which is needed because the
+    full 12-step chunk otherwise blows past the encoder's 512-token cap.
+    """
+    for pat, repl in _COMPRESS_PATTERNS:
+        label = pat.sub(repl, label)
+    return label
+
+
+def format_chunk(task_description, action_labels, start_frame, K=12):
     """Return (task_text, action_text) — two independent strings for dual-T5.
 
     Per CLAUDE_oxe_language_updated.md: the task prompt and the per-frame
@@ -87,16 +113,16 @@ def format_chunk(task_description, action_labels, start_frame, K=12, fps_downsam
     independently and injected into Cosmos as its own cross-attention
     token stream.
 
-    Frame alignment under downsampling: step ``i`` picks
-    ``action_labels[start_frame + i * fps_downsample_ratio]`` so each step
-    describes the motion AT the video frame actually fed to the model.
+    Labels from ``new_lang/`` are stored at MODEL rate — entry ``k`` already
+    describes ``delta(state[k*s] -> state[(k+1)*s])`` — so step ``i`` of the
+    chunk reads ``action_labels[start_frame + i]`` directly, with no
+    raw-rate stride.
 
     Args:
-        task_description:     episode-level task instruction (may be "")
-        action_labels:        per-frame (raw-rate) language labels
-        start_frame:          first raw-frame index of this chunk
-        K:                    chunk size (default 12)
-        fps_downsample_ratio: raw→model frame-rate downsample factor
+        task_description: episode-level task instruction (may be "")
+        action_labels:    model-rate language labels (one per model-frame transition)
+        start_frame:      first MODEL-frame index of this chunk
+        K:                chunk size (default 12)
 
     Returns:
         task_text:   str — Stream 1 (goal-level)
@@ -104,9 +130,9 @@ def format_chunk(task_description, action_labels, start_frame, K=12, fps_downsam
     """
     steps = []
     for i in range(K):
-        idx = start_frame + i * fps_downsample_ratio
+        idx = start_frame + i
         if idx < len(action_labels):
-            label = action_labels[idx]
+            label = _compress_label(action_labels[idx])
         else:
             label = "no significant motion"
         steps.append(f"step{i + 1}: {label}.")
@@ -122,9 +148,9 @@ class Dataset_OXE_Language(Dataset_3D_OXE):
     and horizontal stacking). Overrides only:
 
     - ``__init__`` to bypass the parent's hardcoded ``annotation/`` paths
-      and point sample enumeration at ``language/`` instead.
-    - ``_load_and_process_ann_file`` to parse language JSON format and
-      emit non-overlapping K=12 chunk samples.
+      and point sample enumeration at ``new_lang/`` instead.
+    - ``_load_and_process_ann_file`` to parse model-rate language JSONs
+      and emit non-overlapping K=12 chunk samples.
     - ``_filter_rollout`` to no-op (language JSON has no rollout flags).
     - ``__getitem__`` to zero numerical actions and emit dual captions.
 
@@ -176,21 +202,25 @@ class Dataset_OXE_Language(Dataset_3D_OXE):
             )
 
         dataset_path = os.path.join(oxe_base_path, dataset_name)
-        language_dir = os.path.join(dataset_path, "language")
+        language_dir = os.path.join(dataset_path, "new_lang")
         if not os.path.isdir(language_dir):
             raise FileNotFoundError(
-                f"Missing language/ for {dataset_name}: {language_dir}"
+                f"Missing new_lang/ for {dataset_name}: {language_dir}"
             )
+        # On disk: new_lang/{train,val}/*.json — Dataset_3D globs *.json from
+        # the path matching `mode`, so point each split at its subdir.
+        train_lang_dir = os.path.join(language_dir, "train")
+        val_lang_dir = os.path.join(language_dir, "val")
 
         # Bypass Dataset_3D_OXE.__init__ (which hardcodes annotation/{train,val}
-        # paths) and feed Dataset_3D directly with the language directory as
-        # the sample source. video_path stays at dataset_path so that
+        # paths) and feed Dataset_3D directly with new_lang/ as the sample
+        # source. video_path stays at dataset_path so that
         # Dataset_3D_OXE._get_video_path still resolves correctly.
         Dataset_3D.__init__(
             self,
-            train_annotation_path=language_dir,
-            val_annotation_path=language_dir,
-            test_annotation_path=language_dir,
+            train_annotation_path=train_lang_dir,
+            val_annotation_path=val_lang_dir,
+            test_annotation_path=val_lang_dir,
             video_path=dataset_path,
             fps_downsample_ratio=self._lang_fps,
             num_action_per_chunk=self.K,
@@ -222,10 +252,12 @@ class Dataset_OXE_Language(Dataset_3D_OXE):
         )
 
     def _load_and_process_ann_file(self, lang_file):
-        """Parse one language JSON → list of K=12 chunk samples.
+        """Parse one new_lang JSON → list of K=12 chunk samples.
 
-        Each sample carries enough data (task, labels, episode_id) for
-        ``__getitem__`` to run without re-opening the language file.
+        new_lang rows are indexed at MODEL rate: row ``k`` describes
+        ``delta(state[k*s] -> state[(k+1)*s])``. We walk labels with a
+        model-rate cursor and derive the raw-rate frame_ids used for video
+        loading from it.
         """
         try:
             with open(lang_file, "r") as f:
@@ -246,18 +278,22 @@ class Dataset_OXE_Language(Dataset_3D_OXE):
         frames = sorted(data.get("frames", []), key=lambda fr: fr.get("frame_idx", 0))
         labels = [fr.get("actions", "no significant motion") for fr in frames]
 
-        d = self._lang_fps
-        last_offset = (self.sequence_length - 1) * d  # index of last video frame in a chunk
-        if len(labels) <= last_offset:
+        s = self._lang_fps
+        K = self.K
+        # One chunk needs K model-rate labels (one per model-frame transition)
+        # and K+1 = sequence_length video frames.
+        if len(labels) < K:
             return []
 
         samples = []
-        start = 0
-        # Non-overlapping chunks: next chunk starts K*d raw frames later,
-        # which is exactly where the previous chunk's last frame was (one
-        # frame of overlap — the "next context" frame for the prior chunk).
-        while start + last_offset < len(labels):
-            frame_ids = [start + j * d for j in range(self.sequence_length)]
+        start_model = 0
+        # Non-overlapping chunks: advance K model frames per chunk. Consecutive
+        # chunks share one boundary video frame (the prior chunk's last frame
+        # is the next chunk's first), matching the numerical OXE/Bridge
+        # enumeration convention.
+        while start_model + K <= len(labels):
+            start_raw = start_model * s
+            frame_ids = [start_raw + j * s for j in range(self.sequence_length)]
             samples.append(
                 {
                     "ann_file": lang_file,
@@ -265,10 +301,10 @@ class Dataset_OXE_Language(Dataset_3D_OXE):
                     "episode_id": episode_id,
                     "task": task,
                     "labels": labels,
-                    "start_frame": start,
+                    "start_frame": start_model,  # MODEL-rate index into labels
                 }
             )
-            start += self.K * d
+            start_model += K
         return samples
 
     # ---- __getitem__: zero actions + dual captions + parent's video loader ----
@@ -308,7 +344,6 @@ class Dataset_OXE_Language(Dataset_3D_OXE):
                 sample["labels"],
                 start_frame=sample["start_frame"],
                 K=self.K,
-                fps_downsample_ratio=self._lang_fps,
             )
             data["ai_caption"] = task_text
             data["action_caption"] = action_text

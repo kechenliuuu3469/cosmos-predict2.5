@@ -129,12 +129,20 @@ class TextEncoder:
         return (tensor - tensor.mean(dim=-1, keepdim=True)) / (tensor.std(dim=-1, keepdim=True) + 1e-8)
 
     def compute_text_embeddings_online(
-        self, data_batch: dict[str, torch.Tensor], input_caption_key: str
+        self,
+        data_batch: dict[str, torch.Tensor],
+        input_caption_key: str,
+        max_tokens: int | None = None,
     ) -> torch.Tensor:
         """
         Compute text embeddings for the given prompts.
+
+        max_tokens: pad/truncate length. Defaults to NUM_EMBEDDING_PADDING_TOKENS
+        (512). Pass a larger value when the caption is known to be long
+        (e.g. the K=12 action_caption used by OXE language post-training).
         """
         assert self.model is not None, "Text encoder is not initialized"
+        pad_to = max_tokens if max_tokens is not None else NUM_EMBEDDING_PADDING_TOKENS
 
         # Tokenize prompts
         input_ids_batch = []
@@ -170,13 +178,13 @@ class TextEncoder:
             pad_id = self.model.tokenizer.pad_id
 
             # Do padding or truncation
-            if NUM_EMBEDDING_PADDING_TOKENS > len(input_ids):
+            if pad_to > len(input_ids):
                 # Do padding:
-                pad_len = NUM_EMBEDDING_PADDING_TOKENS - len(input_ids)
+                pad_len = pad_to - len(input_ids)
                 input_ids = input_ids.tolist() + [pad_id] * pad_len
             else:
                 # Do truncation:
-                input_ids = input_ids.tolist()[:NUM_EMBEDDING_PADDING_TOKENS]
+                input_ids = input_ids.tolist()[:pad_to]
             input_ids = torch.LongTensor(input_ids).to(device="cuda")
             input_ids_batch.append(input_ids)
 

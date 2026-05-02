@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=slurm_outputs/%x/out_%x_%j.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kl0820@princeton.edu

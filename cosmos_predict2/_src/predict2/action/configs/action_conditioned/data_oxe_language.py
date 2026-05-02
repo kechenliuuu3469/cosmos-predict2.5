@@ -1,6 +1,7 @@
 """Data config for OXE language-action conditioning (CLAUDE_oxe_language.md spec).
 
-Combines 7 OXE datasets under one dataloader. Each dataset contributes
+Combines 6 OXE datasets (all of the original 7 except ``bc_z``, which has
+no ``new_lang/`` on disk) under one dataloader. Each dataset contributes
 K=12 non-overlapping chunks. Numerical actions are zero — the model
 conditions on the ``ai_caption`` string via compute_online=True.
 """
@@ -21,19 +22,24 @@ from cosmos_predict2._src.predict2.action.datasets.dataset_oxe_language import (
 
 OXE_BASE_PATH = "/scratch/gpfs/AM43/users/kl0820/datasets/oxe_mp4"
 
-# All 7 datasets from the spec.
+# All datasets from the spec that have new_lang/ on disk. bc_z is excluded
+# because its new_lang/ directory was not generated; re-add it here once
+# the labels exist.
 DATASET_ORDER = [
-    "bc_z",
     "bridge",
     "droid",
     "fmb",
     "fractal",
     "furniture_bench",
     "taco_play",
+    "bc_z"
 ]
 
-# Sampling weights — uniform by default; tune later if needed.
-SAMPLING_WEIGHTS = [1.0] * len(DATASET_ORDER)
+# Sampling weights — match the oxe_ee mix (see data_oxe.py:40). Order is
+# the same as DATASET_ORDER above:
+#   bridge 23.75, droid 17.86, fmb 12.68, fractal 22.68,
+#   furniture_bench 4.29, taco_play 5.36, bc_z 13.39
+SAMPLING_WEIGHTS = [23.75, 17.86, 12.68, 22.68, 4.29, 5.36, 13.39]
 
 
 class WeightedConcatDistributedSampler(Sampler):

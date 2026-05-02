@@ -742,8 +742,13 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             # per-chunk action text are encoded independently by T5 and then
             # fed to the conditioner as two parallel TextAttr entries.
             if "action_caption" in data_batch:
+                # K=12 chunk text exceeds the default 512-token cap even after
+                # the dataset-side compression in `format_chunk._compress_label`
+                # (compressed max ~939 tokens across the 6 OXE datasets). 1024
+                # is the smallest power-of-two budget that fits without
+                # truncation.
                 action_text_embeddings = self.text_encoder.compute_text_embeddings_online(
-                    data_batch, "action_caption"
+                    data_batch, "action_caption", max_tokens=1024
                 )
                 data_batch["action_t5_embeddings"] = action_text_embeddings
                 data_batch["action_t5_mask"] = torch.ones(
