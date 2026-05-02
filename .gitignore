@@ -217,3 +217,19 @@ run_postrain_droid_vertical.sh
 !/droid_baseline_eval/*.json
 !/droid_baseline_eval/*.sh
 !/droid_baseline_eval/*.md
+
+# Eval outputs / caches — fully ignored
+/eval_cache/
+/eval_outputs/
+
+# video_cross_eval / video_model_eval: only track source files
+/video_cross_eval/*
+!/video_cross_eval/*.py
+!/video_cross_eval/*.json
+!/video_cross_eval/*.sh
+!/video_cross_eval/*.md
+/video_model_eval/*
+!/video_model_eval/*.py
+!/video_model_eval/*.json
+!/video_model_eval/*.sh
+!/video_model_eval/*.md
