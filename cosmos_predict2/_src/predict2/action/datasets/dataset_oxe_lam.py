@@ -121,6 +121,7 @@ class Dataset_OXE_LAM(Dataset):
         num_action_per_chunk=12,
         video_size=None,
         mode="train",
+        lam_subdir="latent_actions_lam",
     ):
         if video_size is None:
             video_size = [256, 320]
@@ -144,8 +145,9 @@ class Dataset_OXE_LAM(Dataset):
         self.action_dim = lam_action_dim
         self.c_act_scaler = np.ones(lam_action_dim, dtype=float)
 
+        self.lam_subdir = lam_subdir
         self.lam_dir = os.path.join(
-            latent_actions_root, dataset_name, "latent_actions_lam", self.split
+            latent_actions_root, dataset_name, lam_subdir, self.split
         )
         self.video_root = os.path.join(oxe_base_path, dataset_name, "videos", self.split)
 

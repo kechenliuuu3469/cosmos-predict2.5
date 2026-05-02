@@ -35,6 +35,7 @@ OXE_BASE_PATH = os.environ.get(
 LATENT_ACTIONS_ROOT = os.environ.get(
     "OXE_LAM_ROOT", "/scratch/gpfs/AM43/users/kl0820/datasets/real_data_extracted"
 )
+LAM_SUBDIR = os.environ.get("OXE_LAM_SUBDIR", "latent_actions_lam")
 
 
 DATASET_ORDER = [
@@ -157,6 +158,7 @@ def _make_lam_dataset(dataset_name, mode):
         num_action_per_chunk=12,
         video_size=[256, 320],
         mode=mode,
+        lam_subdir=LAM_SUBDIR,
     )
 
 
@@ -202,6 +204,26 @@ oxe_lam_val_dataloader = L(DataLoader)(
 )
 
 
+oxe_lam_bridge_train_dataset = _make_lam_dataset("bridge", "train")
+oxe_lam_bridge_val_dataset = _make_lam_dataset("bridge", "val")
+
+oxe_lam_bridge_train_dataloader = L(DataLoader)(
+    dataset=oxe_lam_bridge_train_dataset,
+    sampler=L(get_sampler)(dataset=oxe_lam_bridge_train_dataset),
+    batch_size=1,
+    drop_last=True,
+    collate_fn=collate_fn,
+)
+
+oxe_lam_bridge_val_dataloader = L(DataLoader)(
+    dataset=oxe_lam_bridge_val_dataset,
+    sampler=L(get_sampler)(dataset=oxe_lam_bridge_val_dataset),
+    batch_size=1,
+    drop_last=True,
+    collate_fn=collate_fn,
+)
+
+
 def register_oxe_lam_data():
     cs = ConfigStore.instance()
     cs.store(
@@ -215,4 +237,16 @@ def register_oxe_lam_data():
         package="dataloader_val",
         name="oxe_lam_val",
         node=oxe_lam_val_dataloader,
+    )
+    cs.store(
+        group="data_train",
+        package="dataloader_train",
+        name="oxe_lam_bridge_train",
+        node=oxe_lam_bridge_train_dataloader,
+    )
+    cs.store(
+        group="data_val",
+        package="dataloader_val",
+        name="oxe_lam_bridge_val",
+        node=oxe_lam_bridge_val_dataloader,
     )
